@@ -77,8 +77,54 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Real web-index querying is not implemented until the crawler/index is connected.
-    return json({ ok: true, indexed: false, results: [], message: "Der eigene Webindex ist noch nicht angeschlossen." });
+    // Temporary live search provider: Wikimedia's public search API.
+    // This returns real, clickable results while Radon's independent crawler/index is still being built.
+    try {
+      const endpoint = new URL("https://de.wikipedia.org/w/api.php");
+      endpoint.searchParams.set("action", "query");
+      endpoint.searchParams.set("list", "search");
+      endpoint.searchParams.set("srsearch", query);
+      endpoint.searchParams.set("format", "json");
+      endpoint.searchParams.set("utf8", "1");
+      endpoint.searchParams.set("srlimit", "10");
+      endpoint.searchParams.set("srprop", "snippet|timestamp");
+      const upstream = await fetch(endpoint.toString(), {
+        headers: { "Accept": "application/json", "User-Agent": "RadonSearch/0.4 (public search prototype)" },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!upstream.ok) throw new Error("Suchanbieter nicht erreichbar");
+      const payload = await upstream.json();
+      const results = (payload?.query?.search ?? []).map((item: Record<string, unknown>) => {
+        const title = String(item.title ?? "");
+        return {
+          title,
+          url: "https://de.wikipedia.org/wiki/" + encodeURIComponent(title.replace(/ /g, "_")),
+          snippet: String(item.snippet ?? "").replace(/<[^>]*>/g, "").replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
+          source: "Wikimedia",
+        };
+      });
+      if (saveHistory && visitorId) {
+        await db.from("search_history").update({ result_count: results.length })
+          .eq("visitor_id", visitorId).eq("query_text", query.slice(0, 300))
+          .order("created_at", { ascending: false }).limit(1);
+      }
+      return json({
+        ok: true,
+        indexed: false,
+        provider: "Wikimedia",
+        results,
+        message: results.length
+          ? "Live-Treffer aus der deutschsprachigen Wikipedia. Der eigene Radon-Webindex befindet sich noch im Aufbau."
+          : "Keine Treffer in der deutschsprachigen Wikipedia. Der eigene Radon-Webindex befindet sich noch im Aufbau.",
+      });
+    } catch {
+      return json({
+        ok: true,
+        indexed: false,
+        results: [],
+        message: "Die Live-Suche ist momentan nicht erreichbar. Der eigene Radon-Webindex befindet sich noch im Aufbau.",
+      });
+    }
   }
 
   if (action.startsWith("admin-")) {
