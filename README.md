@@ -12,7 +12,7 @@ Eine unabhängige Suchmaschinen-Oberfläche mit dem langfristigen Ziel, öffentl
 - Datenschutz: /datenschutz/
 - Admin-Modus: /admin/
 
-## Version 0.3.0 — Backend bereitgestellt
+## Version 0.4.0 — Backend bereitgestellt
 
 - Responsive Website und mobile Navigation
 - Suchverlauf standardmäßig aus; ausdrückliche Aktivierung in den Einstellungen
@@ -53,3 +53,7 @@ Die Kostenprüfung für das neu angelegte Supabase-Projekt ergab zum Erstellungs
 ## Lizenz
 
 MIT — siehe LICENSE.
+
+
+## Live-Suche v0.4.0
+Die Suchseite zeigt derzeit echte Treffer aus der deutschsprachigen Wikipedia über deren öffentliche API. Das ist eine Übergangslösung; ein unabhängiger Radon-Crawler und ein eigener Webindex sind weiterhin nicht implementiert. Die Live-Suche benötigt eine Internetverbindung und kann durch Verfügbarkeit bzw. Limits des Anbieters beeinflusst werden.
