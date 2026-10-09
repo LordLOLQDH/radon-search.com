@@ -39,19 +39,6 @@ function cleanHtml(value: string): string {
     .trim();
 }
 
-function cleanHtml(value: string): string {
-  return value
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;|&#39;|&#039;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&#(\d+);/g, (_m, n) => String.fromCharCode(Number(n)))
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function parseDuckDuckGo(html: string): Array<{title:string; url:string; snippet:string; source:string}> {
   const results: Array<{title:string; url:string; snippet:string; source:string}> = [];
   const regex = /<a\b(?=[^>]*\bclass="[^"]*\bresult__a\b[^"]*")([^>]*)>([\s\S]*?)<\/a>/gi;
