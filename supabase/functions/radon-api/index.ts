@@ -1,9 +1,12 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+// GitHub Pages sends the origin without the repository path. Keep the response
+// origin fixed, and normalize the secret so either the host or full Pages URL works.
 const corsHeaders = {
-  "Access-Control-Allow-Origin": Deno.env.get("RADON_ALLOWED_ORIGIN") ?? "https://lordlolqdh.github.io",
-  "Access-Control-Allow-Headers": "authorization, apikey, content-type",
+  "Access-Control-Allow-Origin": "https://lordlolqdh.github.io",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-api-version",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Vary": "Origin",
   "Content-Type": "application/json; charset=utf-8",
   "Cache-Control": "no-store",
 };
@@ -28,7 +31,9 @@ Deno.serve(async (req: Request) => {
   if (!supabaseUrl || !serviceKey || !publicKey) return json({ error: "Backend ist noch nicht konfiguriert." }, 503);
 
   const origin = req.headers.get("origin");
-  const allowedOrigin = Deno.env.get("RADON_ALLOWED_ORIGIN") ?? "https://lordlolqdh.github.io";
+  const configuredOrigin = Deno.env.get("RADON_ALLOWED_ORIGIN") ?? "https://lordlolqdh.github.io";
+  let allowedOrigin = "https://lordlolqdh.github.io";
+  try { allowedOrigin = new URL(configuredOrigin).origin; } catch { /* use the safe default */ }
   if (origin && origin !== allowedOrigin) return json({ error: "Ungueltiger Ursprung." }, 403);
 
   let body: Record<string, unknown>;
