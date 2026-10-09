@@ -17,7 +17,10 @@
       if (!config.apiUrl) return { configured: false, results: [] };
       const response = await fetch(config.apiUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.supabaseAnonKey ? { "apikey": config.supabaseAnonKey } : {})
+        },
         body: JSON.stringify({
           action: "search",
           query,
