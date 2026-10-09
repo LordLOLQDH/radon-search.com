@@ -25,7 +25,44 @@ async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-Deno.serve(async (req: Request) => {
+
+function cleanHtml(value: string): string {
+  return value
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;|&#39;|&#039;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#(\d+);/g, (_m, n) => String.fromCharCode(Number(n)))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseDuckDuckGo(html: string): Array<{title:string; url:string; snippet:string; source:string}> {
+  const anchors = [...html.matchAll(/<a\b([^>]*class="[^"]*result__a[^"]*"[^>]*)>([\s\S]*?)<\/a>/gi)];
+  const results: Array<{title:string; url:string; snippet:string; source:string}> = [];
+  for (const match of anchors) {
+    const href = match[1].match(/href="([^"]+)"/i)?.[1];
+    if (!href) continue;
+    let url = href.replace(/&amp;/g, "&");
+    try {
+      const parsed = new URL(url, "https://html.duckduckgo.com");
+      const redirected = parsed.searchParams.get("uddg");
+      if (redirected) url = redirected;
+    } catch { continue; }
+    if (!/^https?:\/\//i.test(url) || /duckduckgo\.com/i.test(new URL(url).hostname)) continue;
+    const title = cleanHtml(match[2]) || url;
+    const nearby = html.slice(match.index! + match[0].length, match.index! + match[0].length + 1200);
+    const snippetMatch = nearby.match(/class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/[^>]+>/i);
+    let source = "Web";
+    try { source = new URL(url).hostname; } catch { /* ignore invalid URL */ }
+    results.push({ title, url, snippet: snippetMatch ? cleanHtml(snippetMatch[1]) : "Website öffnen, um weitere Informationen zu lesen.", source });
+    if (results.length >= 10) break;
+  }
+  return results;
+}
+\nDeno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Methode nicht erlaubt." }, 405);
   if (!supabaseUrl || !serviceKey || !publicKey) return json({ error: "Backend ist noch nicht konfiguriert." }, 503);
@@ -82,58 +119,73 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Broad web metasearch via public SearXNG instances. These instances are
-    // community-operated and may be rate-limited or unavailable; try several.
-    const providers = [
-      "https://searx.tiekoetter.com/search",
-      "https://searx.be/search",
-      "https://search.sapti.me/search",
-    ];
+    // Try DuckDuckGo's lightweight HTML results first, then public SearXNG JSON APIs.
+    // Public metasearch instances can disable JSON access or rate-limit requests.
     let results: Array<{title:string; url:string; snippet:string; source:string}> = [];
     let providerUsed = "";
-    for (const provider of providers) {
-      try {
-        const endpoint = new URL(provider);
-        endpoint.searchParams.set("q", query);
-        endpoint.searchParams.set("format", "json");
-        endpoint.searchParams.set("language", "de");
-        endpoint.searchParams.set("safesearch", "0");
-        const upstream = await fetch(endpoint.toString(), {
-          headers: {
-            "Accept": "application/json",
-            "User-Agent": "RadonSearch/0.5 (public web search prototype)",
-          },
-          signal: AbortSignal.timeout(4500),
-        });
-        if (!upstream.ok) continue;
-        const payload = await upstream.json();
-        const items = Array.isArray(payload?.results) ? payload.results : [];
-        const mapped = items
-          .filter((item: Record<string, unknown>) =>
-            typeof item.url === "string" && /^https?:\/\//i.test(item.url as string)
-          )
-          .slice(0, 10)
-          .map((item: Record<string, unknown>) => ({
-            title: String(item.title ?? item.url ?? "Website"),
-            url: String(item.url),
-            snippet: String(item.content ?? item.snippet ?? "Website öffnen, um weitere Informationen zu lesen.")
-              .replace(/<[^>]*>/g, "")
-              .replace(/&quot;/g, '"')
-              .replace(/&#039;/g, "'")
-              .replace(/&amp;/g, "&")
-              .replace(/&lt;/g, "<")
-              .replace(/&gt;/g, ">"),
-            source: (() => {
-              try { return new URL(String(item.url)).hostname; } catch { return "Web"; }
-            })(),
-          }));
-        if (mapped.length) {
-          results = mapped;
-          providerUsed = new URL(provider).hostname;
-          break;
+    try {
+      const endpoint = new URL("https://html.duckduckgo.com/html/");
+      endpoint.searchParams.set("q", query);
+      endpoint.searchParams.set("kl", "de-de");
+      const upstream = await fetch(endpoint.toString(), {
+        headers: {
+          "Accept": "text/html,application/xhtml+xml",
+          "User-Agent": "Mozilla/5.0 (compatible; RadonSearch/0.5; +https://lordlolqdh.github.io/radon-search.com/)",
+        },
+        signal: AbortSignal.timeout(6500),
+      });
+      if (upstream.ok) {
+        results = parseDuckDuckGo(await upstream.text());
+        if (results.length) providerUsed = "DuckDuckGo";
+      }
+    } catch {
+      // Continue with other public search services.
+    }
+
+    if (!results.length) {
+      const providers = [
+        "https://searx.tiekoetter.com/search",
+        "https://searx.be/search",
+        "https://search.sapti.me/search",
+      ];
+      for (const provider of providers) {
+        try {
+          const endpoint = new URL(provider);
+          endpoint.searchParams.set("q", query);
+          endpoint.searchParams.set("format", "json");
+          endpoint.searchParams.set("language", "all");
+          endpoint.searchParams.set("safesearch", "0");
+          const upstream = await fetch(endpoint.toString(), {
+            headers: {
+              "Accept": "application/json",
+              "User-Agent": "Mozilla/5.0 (compatible; RadonSearch/0.5)",
+            },
+            signal: AbortSignal.timeout(3500),
+          });
+          if (!upstream.ok) continue;
+          const payload = await upstream.json();
+          const items = Array.isArray(payload?.results) ? payload.results : [];
+          const mapped = items
+            .filter((item: Record<string, unknown>) =>
+              typeof item.url === "string" && /^https?:\/\//i.test(item.url as string)
+            )
+            .slice(0, 10)
+            .map((item: Record<string, unknown>) => ({
+              title: String(item.title ?? item.url ?? "Website"),
+              url: String(item.url),
+              snippet: cleanHtml(String(item.content ?? item.snippet ?? "Website öffnen, um weitere Informationen zu lesen.")),
+              source: (() => {
+                try { return new URL(String(item.url)).hostname; } catch { return "Web"; }
+              })(),
+            }));
+          if (mapped.length) {
+            results = mapped;
+            providerUsed = new URL(provider).hostname;
+            break;
+          }
+        } catch {
+          // Try the next public instance.
         }
-      } catch {
-        // Try the next public instance.
       }
     }
     if (saveHistory && visitorId) {
@@ -144,11 +196,11 @@ Deno.serve(async (req: Request) => {
     return json({
       ok: true,
       indexed: false,
-      provider: providerUsed || "SearXNG",
+      provider: providerUsed || "Websuche",
       results,
       message: results.length
         ? "Web-Treffer aus mehreren Suchmaschinen. Die Ergebnisse können je nach Verfügbarkeit der öffentlichen Suchdienste variieren; Radons eigener Webindex ist noch im Aufbau."
-        : "Die öffentlichen Web-Suchdienste sind momentan nicht erreichbar oder haben keine Treffer geliefert. Bitte versuche es später erneut.",
+        : "Die externen Suchdienste haben keine Ergebnisse geliefert. Bitte versuche eine andere Suchanfrage.",
     });
   }
 
