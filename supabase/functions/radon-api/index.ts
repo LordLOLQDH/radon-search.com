@@ -64,6 +64,44 @@ function parseDuckDuckGo(html: string): Array<{title:string; url:string; snippet
   }
   return results;
 }
+function parseSearchHtml(html: string, provider: "Google" | "Bing"): Array<{title:string; url:string; snippet:string; source:string}> {
+  const results: Array<{title:string; url:string; snippet:string; source:string}> = [];
+  const patterns = provider === "Google"
+    ? [
+        /<a\b[^>]*href="(https?:\/\/[^"]+)"[^>]*>\s*<h3[^>]*>([\s\S]*?)<\/h3>[\s\S]*?<\/a>/gi,
+        /<a\b[^>]*href="\/url\?q=([^&"]+)[^"]*"[^>]*>\s*<h3[^>]*>([\s\S]*?)<\/h3>[\s\S]*?<\/a>/gi,
+      ]
+    : [
+        /<li\b[^>]*class="[^"]*b_algo[^"]*"[^>]*>[\s\S]*?<h2[^>]*>\s*<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<\/h2>([\s\S]*?)<\/li>/gi,
+      ];
+  for (const pattern of patterns) {
+    for (const match of html.matchAll(pattern)) {
+      try {
+        let url = match[1];
+        if (provider === "Google" && url.startsWith("/url?")) {
+          url = new URL(url, "https://www.google.com").searchParams.get("q") ?? "";
+        } else if (provider === "Google") {
+          url = decodeURIComponent(url.replace(/&amp;/g, "&"));
+        }
+        url = url.replace(/&amp;/g, "&");
+        if (!/^https?:\/\//i.test(url)) continue;
+        const host = new URL(url).hostname.toLowerCase();
+        if (provider === "Google" && (host === "google.com" || host.endsWith(".google.com"))) continue;
+        if (provider === "Bing" && (host === "bing.com" || host.endsWith(".bing.com"))) continue;
+        const title = cleanHtml(match[2] ?? "") || url;
+        const snippet = provider === "Bing"
+          ? cleanHtml((match[3] ?? "").match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1] ?? "")
+          : "";
+        if (!results.some((r) => r.url === url)) {
+          results.push({ title, url, snippet: snippet || "Website öffnen, um weitere Informationen zu lesen.", source: host });
+        }
+        if (results.length >= 10) return results;
+      } catch { /* skip malformed result */ }
+    }
+  }
+  return results;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Methode nicht erlaubt." }, 405);
@@ -121,30 +159,35 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Try DuckDuckGo's lightweight HTML results first, then public SearXNG JSON APIs.
-    // Public metasearch instances can disable JSON access or rate-limit requests.
+    // Try several hidden HTML search providers, then public SearXNG JSON instances.
+    // Providers are used only server-side; Radon Search remains the visible interface.
     let results: Array<{title:string; url:string; snippet:string; source:string}> = [];
     let providerUsed = "";
-    try {
-      const endpoint = "https://html.duckduckgo.com/html/";
-      const form = new URLSearchParams({ q: query, kl: "wt-wt" });
-      const upstream = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Accept": "text/html,application/xhtml+xml",
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "Mozilla/5.0 (compatible; RadonSearch/0.5)",
-        },
-        body: form.toString(),
-        signal: AbortSignal.timeout(8000),
-      });
-      if (upstream.ok) {
+    const htmlProviders: Array<{name:"Google"|"Bing"|"DuckDuckGo"; url:string; build:(q:string)=>string}> = [
+      { name: "Google", url: "https://www.google.com/search", build: (q) => "https://www.google.com/search?num=10&q=" + encodeURIComponent(q) },
+      { name: "Bing", url: "https://www.bing.com/search", build: (q) => "https://www.bing.com/search?count=10&q=" + encodeURIComponent(q) },
+      { name: "DuckDuckGo", url: "https://html.duckduckgo.com/html/", build: (q) => "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(q) },
+    ];
+    for (const provider of htmlProviders) {
+      try {
+        const upstream = await fetch(provider.build(query), {
+          headers: {
+            "Accept": "text/html,application/xhtml+xml",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+          },
+          signal: AbortSignal.timeout(4500),
+        });
+        if (!upstream.ok) continue;
         const html = await upstream.text();
-        results = parseDuckDuckGo(html);
-        if (results.length) providerUsed = "DuckDuckGo";
+        if (provider.name === "DuckDuckGo") results = parseDuckDuckGo(html);
+        else results = parseSearchHtml(html, provider.name);
+        if (results.length) {
+          providerUsed = provider.name;
+          break;
+        }
+      } catch {
+        // Continue to the next server-side provider.
       }
-    } catch {
-      // Continue with other public search services.
     }
     if (!results.length) {
       const providers = [
@@ -160,36 +203,23 @@ Deno.serve(async (req: Request) => {
           endpoint.searchParams.set("language", "all");
           endpoint.searchParams.set("safesearch", "0");
           const upstream = await fetch(endpoint.toString(), {
-            headers: {
-              "Accept": "application/json",
-              "User-Agent": "Mozilla/5.0 (compatible; RadonSearch/0.5)",
-            },
+            headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0 (compatible; RadonSearch/0.6)" },
             signal: AbortSignal.timeout(3500),
           });
           if (!upstream.ok) continue;
           const payload = await upstream.json();
           const items = Array.isArray(payload?.results) ? payload.results : [];
           const mapped = items
-            .filter((item: Record<string, unknown>) =>
-              typeof item.url === "string" && /^https?:\/\//i.test(item.url as string)
-            )
+            .filter((item: Record<string, unknown>) => typeof item.url === "string" && /^https?:\/\//i.test(item.url as string))
             .slice(0, 10)
             .map((item: Record<string, unknown>) => ({
               title: String(item.title ?? item.url ?? "Website"),
               url: String(item.url),
               snippet: cleanHtml(String(item.content ?? item.snippet ?? "Website öffnen, um weitere Informationen zu lesen.")),
-              source: (() => {
-                try { return new URL(String(item.url)).hostname; } catch { return "Web"; }
-              })(),
+              source: (() => { try { return new URL(String(item.url)).hostname; } catch { return "Web"; } })(),
             }));
-          if (mapped.length) {
-            results = mapped;
-            providerUsed = new URL(provider).hostname;
-            break;
-          }
-        } catch {
-          // Try the next public instance.
-        }
+          if (mapped.length) { results = mapped; providerUsed = new URL(provider).hostname; break; }
+        } catch { /* Continue to next instance. */ }
       }
     }
     if (saveHistory && visitorId) {
