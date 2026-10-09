@@ -82,54 +82,74 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Temporary live search provider: Wikimedia's public search API.
-    // This returns real, clickable results while Radon's independent crawler/index is still being built.
-    try {
-      const endpoint = new URL("https://de.wikipedia.org/w/api.php");
-      endpoint.searchParams.set("action", "query");
-      endpoint.searchParams.set("list", "search");
-      endpoint.searchParams.set("srsearch", query);
-      endpoint.searchParams.set("format", "json");
-      endpoint.searchParams.set("utf8", "1");
-      endpoint.searchParams.set("srlimit", "10");
-      endpoint.searchParams.set("srprop", "snippet|timestamp");
-      const upstream = await fetch(endpoint.toString(), {
-        headers: { "Accept": "application/json", "User-Agent": "RadonSearch/0.4 (public search prototype)" },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!upstream.ok) throw new Error("Suchanbieter nicht erreichbar");
-      const payload = await upstream.json();
-      const results = (payload?.query?.search ?? []).map((item: Record<string, unknown>) => {
-        const title = String(item.title ?? "");
-        return {
-          title,
-          url: "https://de.wikipedia.org/wiki/" + encodeURIComponent(title.replace(/ /g, "_")),
-          snippet: String(item.snippet ?? "").replace(/<[^>]*>/g, "").replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
-          source: "Wikimedia",
-        };
-      });
-      if (saveHistory && visitorId) {
-        await db.from("search_history").update({ result_count: results.length })
-          .eq("visitor_id", visitorId).eq("query_text", query.slice(0, 300))
-          .order("created_at", { ascending: false }).limit(1);
+    // Broad web metasearch via public SearXNG instances. These instances are
+    // community-operated and may be rate-limited or unavailable; try several.
+    const providers = [
+      "https://searx.tiekoetter.com/search",
+      "https://searx.be/search",
+      "https://search.sapti.me/search",
+    ];
+    let results: Array<{title:string; url:string; snippet:string; source:string}> = [];
+    let providerUsed = "";
+    for (const provider of providers) {
+      try {
+        const endpoint = new URL(provider);
+        endpoint.searchParams.set("q", query);
+        endpoint.searchParams.set("format", "json");
+        endpoint.searchParams.set("language", "de");
+        endpoint.searchParams.set("safesearch", "0");
+        const upstream = await fetch(endpoint.toString(), {
+          headers: {
+            "Accept": "application/json",
+            "User-Agent": "RadonSearch/0.5 (public web search prototype)",
+          },
+          signal: AbortSignal.timeout(4500),
+        });
+        if (!upstream.ok) continue;
+        const payload = await upstream.json();
+        const items = Array.isArray(payload?.results) ? payload.results : [];
+        const mapped = items
+          .filter((item: Record<string, unknown>) =>
+            typeof item.url === "string" && /^https?:\/\//i.test(item.url as string)
+          )
+          .slice(0, 10)
+          .map((item: Record<string, unknown>) => ({
+            title: String(item.title ?? item.url ?? "Website"),
+            url: String(item.url),
+            snippet: String(item.content ?? item.snippet ?? "Website öffnen, um weitere Informationen zu lesen.")
+              .replace(/<[^>]*>/g, "")
+              .replace(/&quot;/g, '"')
+              .replace(/&#039;/g, "'")
+              .replace(/&amp;/g, "&")
+              .replace(/&lt;/g, "<")
+              .replace(/&gt;/g, ">"),
+            source: (() => {
+              try { return new URL(String(item.url)).hostname; } catch { return "Web"; }
+            })(),
+          }));
+        if (mapped.length) {
+          results = mapped;
+          providerUsed = new URL(provider).hostname;
+          break;
+        }
+      } catch {
+        // Try the next public instance.
       }
-      return json({
-        ok: true,
-        indexed: false,
-        provider: "Wikimedia",
-        results,
-        message: results.length
-          ? "Live-Treffer aus der deutschsprachigen Wikipedia. Der eigene Radon-Webindex befindet sich noch im Aufbau."
-          : "Keine Treffer in der deutschsprachigen Wikipedia. Der eigene Radon-Webindex befindet sich noch im Aufbau.",
-      });
-    } catch {
-      return json({
-        ok: true,
-        indexed: false,
-        results: [],
-        message: "Die Live-Suche ist momentan nicht erreichbar. Der eigene Radon-Webindex befindet sich noch im Aufbau.",
-      });
     }
+    if (saveHistory && visitorId) {
+      await db.from("search_history").update({ result_count: results.length })
+        .eq("visitor_id", visitorId).eq("query_text", query.slice(0, 300))
+        .order("created_at", { ascending: false }).limit(1);
+    }
+    return json({
+      ok: true,
+      indexed: false,
+      provider: providerUsed || "SearXNG",
+      results,
+      message: results.length
+        ? "Web-Treffer aus mehreren Suchmaschinen. Die Ergebnisse können je nach Verfügbarkeit der öffentlichen Suchdienste variieren; Radons eigener Webindex ist noch im Aufbau."
+        : "Die öffentlichen Web-Suchdienste sind momentan nicht erreichbar oder haben keine Treffer geliefert. Bitte versuche es später erneut.",
+    });
   }
 
   if (action.startsWith("admin-")) {
