@@ -39,30 +39,44 @@ function cleanHtml(value: string): string {
     .trim();
 }
 
+function cleanHtml(value: string): string {
+  return value
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;|&#39;|&#039;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#(\d+);/g, (_m, n) => String.fromCharCode(Number(n)))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function parseDuckDuckGo(html: string): Array<{title:string; url:string; snippet:string; source:string}> {
-  const anchors = [...html.matchAll(/<a\b([^>]*class="[^"]*result__a[^"]*"[^>]*)>([\s\S]*?)<\/a>/gi)];
   const results: Array<{title:string; url:string; snippet:string; source:string}> = [];
-  for (const match of anchors) {
-    const href = match[1].match(/href="([^"]+)"/i)?.[1];
+  const regex = /<a\b(?=[^>]*\bclass="[^"]*\bresult__a\b[^"]*")([^>]*)>([\s\S]*?)<\/a>/gi;
+  for (const match of html.matchAll(regex)) {
+    const href = (match[1] ?? "").match(/\bhref="([^"]+)"/i)?.[1];
     if (!href) continue;
-    let url = href.replace(/&amp;/g, "&");
+    let url = cleanHtml(href);
     try {
       const parsed = new URL(url, "https://html.duckduckgo.com");
       const redirected = parsed.searchParams.get("uddg");
       if (redirected) url = redirected;
+      if (!/^https?:\/\//i.test(url)) continue;
+      const host = new URL(url).hostname.toLowerCase();
+      if (host === "duckduckgo.com" || host.endsWith(".duckduckgo.com")) continue;
     } catch { continue; }
-    if (!/^https?:\/\//i.test(url) || /duckduckgo\.com/i.test(new URL(url).hostname)) continue;
-    const title = cleanHtml(match[2]) || url;
-    const nearby = html.slice(match.index! + match[0].length, match.index! + match[0].length + 1200);
-    const snippetMatch = nearby.match(/class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/[^>]+>/i);
+    const title = cleanHtml(match[2] ?? "") || url;
+    const after = html.slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 1800);
+    const snippetMatch = after.match(/class="[^"]*\bresult__snippet\b[^"]*"[^>]*>([\s\S]*?)<\/[^>]+>/i);
     let source = "Web";
-    try { source = new URL(url).hostname; } catch { /* ignore invalid URL */ }
+    try { source = new URL(url).hostname; } catch { /* ignore */ }
     results.push({ title, url, snippet: snippetMatch ? cleanHtml(snippetMatch[1]) : "Website öffnen, um weitere Informationen zu lesen.", source });
     if (results.length >= 10) break;
   }
   return results;
 }
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Methode nicht erlaubt." }, 405);
@@ -125,24 +139,26 @@ Deno.serve(async (req: Request) => {
     let results: Array<{title:string; url:string; snippet:string; source:string}> = [];
     let providerUsed = "";
     try {
-      const endpoint = new URL("https://html.duckduckgo.com/html/");
-      endpoint.searchParams.set("q", query);
-      endpoint.searchParams.set("kl", "de-de");
-      const upstream = await fetch(endpoint.toString(), {
+      const endpoint = "https://html.duckduckgo.com/html/";
+      const form = new URLSearchParams({ q: query, kl: "wt-wt" });
+      const upstream = await fetch(endpoint, {
+        method: "POST",
         headers: {
           "Accept": "text/html,application/xhtml+xml",
-          "User-Agent": "Mozilla/5.0 (compatible; RadonSearch/0.5; +https://lordlolqdh.github.io/radon-search.com/)",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Mozilla/5.0 (compatible; RadonSearch/0.5)",
         },
-        signal: AbortSignal.timeout(6500),
+        body: form.toString(),
+        signal: AbortSignal.timeout(8000),
       });
       if (upstream.ok) {
-        results = parseDuckDuckGo(await upstream.text());
+        const html = await upstream.text();
+        results = parseDuckDuckGo(html);
         if (results.length) providerUsed = "DuckDuckGo";
       }
     } catch {
       // Continue with other public search services.
     }
-
     if (!results.length) {
       const providers = [
         "https://searx.tiekoetter.com/search",
