@@ -62,7 +62,8 @@ function parseDuckDuckGo(html: string): Array<{title:string; url:string; snippet
   }
   return results;
 }
-\nDeno.serve(async (req: Request) => {
+
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Methode nicht erlaubt." }, 405);
   if (!supabaseUrl || !serviceKey || !publicKey) return json({ error: "Backend ist noch nicht konfiguriert." }, 503);
