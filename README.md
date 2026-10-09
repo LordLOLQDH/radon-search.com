@@ -12,39 +12,43 @@ Eine unabhängige Suchmaschinen-Oberfläche mit dem langfristigen Ziel, öffentl
 - Datenschutz: /datenschutz/
 - Admin-Modus: /admin/
 
-## Version 0.2.0 — Backend-Vorbereitung
+## Version 0.3.0 — Backend bereitgestellt
 
 - Responsive Website und mobile Navigation
 - Suchverlauf standardmäßig aus; ausdrückliche Aktivierung in den Einstellungen
-- Supabase-Schema für Suchverlauf, Sicherheitsereignisse und Rate-Limit-Zähler
-- Edge Function als Backend-Gerüst mit Anfragevalidierung, einfacher Ratenbegrenzung und Admin-E-Mail-Prüfung
+- Eigenes Supabase-Projekt „Radon Search“ in Frankfurt (EU), getrennt von KDS AI
+- Datenbanktabellen für Suchverlauf, Sicherheitsereignisse und Rate-Limit-Zähler
+- Row-Level Security und kein direkter Browserzugriff auf diese Tabellen
+- Bereitgestellte Edge Function `radon-api` mit Eingabeprüfung, einfacher Ratenbegrenzung und Admin-Authentifizierung
+- Öffentliche Projekt-URL und Publishable Key in `assets/config.js` verbunden
 - Admin-Oberfläche mit Supabase-Auth-Anmeldung und serverseitiger Admin-Prüfung
-- Impressum und Datenschutzhinweise als klar markierte Vorlagen
 - Keine Werbe- oder Analyse-Tracker eingebaut
 
-## Wichtiger aktueller Status
+## Projektstatus
 
-**Das Backend ist noch nicht live verbunden.** Die öffentliche Konfiguration in assets/config.js ist absichtlich leer. Die SQL-Datei muss in einem eigenen Radon-Supabase-Projekt ausgeführt werden; danach müssen die Edge Function bereitgestellt, ihre Secrets konfiguriert und die öffentlichen URL-/Key-Werte eingetragen werden. Das KDS-AI-Projekt wird nicht für Radon Search verwendet.
+Die Supabase-Datenbank und die Edge Function sind bereitgestellt. Die Datenbanktabellen und aktivierte RLS wurden nach der Einrichtung geprüft. Der Frontend-Code ist mit dem neuen Projekt verbunden.
 
-Der Admin-Zugang funktioniert erst nach der Einrichtung eines Supabase-Auth-Kontos und der serverseitigen Umgebungsvariable RADON_ADMIN_EMAIL. Er benötigt außerdem RADON_ALLOWED_ORIGIN, RATE_LIMIT_SECRET und die vom Supabase-Backend bereitgestellten Datenbank-Zugangsdaten. Niemals service_role oder einen Secret Key in assets/config.js oder andere öffentliche Dateien eintragen.
+**Noch manuell in Supabase einzurichten:** Öffne das Projekt `czlbvwufyxilavvrzvgb` im Supabase Dashboard. Unter den Edge-Function-Secrets müssen mindestens `RADON_ADMIN_EMAIL` (E-Mail des Admin-Auth-Kontos) und idealerweise `RATE_LIMIT_SECRET` (ein zufälliger, geheimer Wert) gesetzt werden. `RADON_ALLOWED_ORIGIN` kann auf `https://lordlolqdh.github.io` gesetzt werden. Die von Supabase bereitgestellten `SUPABASE_URL`, `SUPABASE_ANON_KEY` und `SUPABASE_SERVICE_ROLE_KEY` dürfen nur serverseitig verwendet werden; niemals einen Secret- oder Service-Role-Key in `assets/config.js` oder sonstige öffentliche Dateien eintragen.
+
+Anschließend muss unter Authentication ein Admin-Konto mit E-Mail/Passwort erstellt werden, dessen E-Mail exakt mit `RADON_ADMIN_EMAIL` übereinstimmt. Das Admin-Dashboard bleibt bis dahin gesperrt.
 
 ## Suchverlauf, Datenschutz und Sicherheit
 
 Suchbegriffe werden nur dann an die Backend-Funktion zum Speichern übergeben, wenn die Person die Einstellung ausdrücklich aktiviert hat. Eine aktivierte Einstellung ist keine pauschale rechtliche Freigabe; Zweck, Rechtsgrundlage, Löschfristen und Rechte müssen vor dem öffentlichen Betrieb geprüft und transparent dokumentiert werden. Der aktuelle Filter erkennt nur offensichtliche ungültige Eingaben und begrenzt Anfragen; er ist kein vollständiger DDoS-Schutz oder ausgereiftes Anti-Missbrauchssystem.
 
-Impressum und Datenschutzseite enthalten noch Platzhalter und dürfen nicht als fertige Rechtsdokumente angesehen werden. Vor dem Livebetrieb müssen Betreiberangaben, Kontakt, Anbieter der Dienste, Datenflüsse und Aufbewahrungsfristen korrekt ergänzt werden.
+Impressum und Datenschutzseite enthalten noch Platzhalter und dürfen nicht als fertige Rechtsdokumente angesehen werden. Vor dem öffentlichen Betrieb müssen Betreiberangaben, Kontakt, Anbieter der Dienste, Datenflüsse und Aufbewahrungsfristen korrekt ergänzt werden.
 
 ## Noch nicht umgesetzt
 
 - Eigener Crawler und durchsuchbarer Webindex
-- Echte Webtreffer und Relevanzsortierung
+- Echte Webtreffer und Relevanzsortierung — die API meldet derzeit ausdrücklich, dass noch kein Index angeschlossen ist
 - Automatische Löschung nach festgelegter Aufbewahrungsfrist
 - Produktionsreife Bot-/Missbrauchserkennung
-- Live-Verbindung zu einem bereitgestellten Supabase-Projekt
+- Bestätigung des Live-Verhaltens der API aus einem externen Browser-Test
 
 ## Kosten und Hosting
 
-GitHub Pages hostet nur die statische Oberfläche, keinen dauerhaft laufenden Crawler. Supabase bietet einen kostenlosen Tarif mit Grenzen; Verfügbarkeit, Datenbank- und Funktionskontingente sind nicht unbegrenzt. Eine vollständige Abdeckung des Internets und garantierter 24/7-Betrieb können nicht versprochen werden.
+Die Kostenprüfung für das neu angelegte Supabase-Projekt ergab zum Erstellungszeitpunkt 0 USD pro Monat. Kostenfreiheit und Verfügbarkeit sind nicht unbegrenzt garantiert; Free-Tier-Grenzen können sich ändern. GitHub Pages hostet nur die statische Oberfläche, keinen dauerhaft laufenden Crawler. Eine vollständige Abdeckung des Internets und garantierter 24/7-Betrieb können nicht versprochen werden.
 
 ## Lizenz
 
