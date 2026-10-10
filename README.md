@@ -12,7 +12,7 @@ Eine unabhängige Suchmaschinen-Oberfläche mit dem langfristigen Ziel, öffentl
 - Datenschutz: /datenschutz/
 - Admin-Modus: /admin/
 
-## Version 0.5.0 — Backend bereitgestellt
+## Version 0.6.0 — Backend bereitgestellt
 
 - Responsive Website und mobile Navigation
 - Suchverlauf standardmäßig aus; ausdrückliche Aktivierung in den Einstellungen
@@ -55,13 +55,21 @@ Die Kostenprüfung für das neu angelegte Supabase-Projekt ergab zum Erstellungs
 MIT — siehe LICENSE.
 
 
-## Live-Suche v0.5.0
+## Live-Suche v0.6.0
 Die Suchseite zeigt derzeit echte Treffer aus der deutschsprachigen Wikipedia über deren öffentliche API. Das ist eine Übergangslösung; ein unabhängiger Radon-Crawler und ein eigener Webindex sind weiterhin nicht implementiert. Die Live-Suche benötigt eine Internetverbindung und kann durch Verfügbarkeit bzw. Limits des Anbieters beeinflusst werden.
 
 
-## Version 0.5.0 — zuverlässiger Such-Fallback
+## Version 0.6.0 — zuverlässiger Such-Fallback
 
 - Suchseite bietet bei leeren Ergebnissen oder einem Backend-Fehler einen direkten DuckDuckGo-Suchlink mit derselben Suchanfrage.
 - Bei Treffern bleibt die Radon-Ergebnisoberfläche erhalten und bietet zusätzlich einen Link zu weiteren DuckDuckGo-Ergebnissen.
 - Wichtig: DuckDuckGo-Suchergebnisse werden nicht in einem iframe eingebettet und DuckDuckGo-Cookies werden nicht in Radons Cookies übernommen. Die Weiterleitung erfolgt direkt auf DuckDuckGo; der Radon-Suchverlauf wird nur bei aktivierter Einstellung gespeichert.
 - Die serverseitige HTML-Auswertung externer Suchanbieter bleibt unverbindlich und kann durch Rate-Limits oder Bot-Schutz ausfallen. Der DuckDuckGo-Link ist deshalb ein zuverlässiger manueller Ausweichweg, aber kein Nachweis eines eigenen Webindex.
+
+
+## Version 0.6.0 — Google-Suche
+
+- Die Backend-Funktion versucht Google bereits serverseitig zuerst auszulesen; öffentliche HTML-Suchergebnisse können jedoch durch Bot-Schutz, Änderungen am HTML oder Rate-Limits blockiert werden.
+- Wenn Radon keine eingebetteten Treffer erhält oder das Backend ausfällt, zeigt die Suchseite jetzt einen direkten Google-Suchlink mit derselben Anfrage.
+- DuckDuckGo bleibt als alternative direkte Suche verfügbar.
+- Die direkte Google-Suche ist keine Google-API-Integration. Für stabile, vollständig innerhalb von Radon dargestellte Google-Ergebnisse wäre eine zugelassene Such-API erforderlich; dafür gelten Anbieterbedingungen und mögliche Nutzungslimits/Kosten.
