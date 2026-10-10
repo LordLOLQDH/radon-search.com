@@ -1,4 +1,4 @@
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#101114"><link rel="icon" type="image/jpeg" href="../fd56e949-8be5-476f-b68e-31961018c096.jpeg"><title>Suche · Radon Search</title><link rel="stylesheet" href="../assets/style.css"></head><body><header class="topbar"><a class="brand" href="../"><img class="brand-logo" src="../fd56e949-8be5-476f-b68e-31961018c096.jpeg" alt="Radon Search Logo"><span>RADON <b>SEARCH</b></span></a><nav><a href="../about/">Über Radon</a><a href="../settings/">Einstellungen</a></nav></header><main class="page-main"><div class="eyebrow">RADON SEARCH · SUCHE</div><h1>Suchergebnisse</h1><form class="search-form" action="../search/" method="get"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"></circle><path d="m16 16 5 5"></path></svg><input id="q" name="q" type="search" placeholder="Suchbegriff eingeben" aria-label="Suchbegriff" maxlength="300" required><button type="submit">Suchen <span>→</span></button></form><p class="result-query" id="query-label"></p><section class="content-card" aria-live="polite" id="results"><p class="hint">Suche wird gestartet …</p></section></main><footer><span>© <span id="year"></span> Radon Search</span><span>Version 0.4.0</span><a href="../impressum/">Impressum</a><a href="../datenschutz/">Datenschutz</a><a href="../">Startseite</a></footer>
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#101114"><link rel="icon" type="image/jpeg" href="../fd56e949-8be5-476f-b68e-31961018c096.jpeg"><title>Suche · Radon Search</title><link rel="stylesheet" href="../assets/style.css"></head><body><header class="topbar"><a class="brand" href="../"><img class="brand-logo" src="../fd56e949-8be5-476f-b68e-31961018c096.jpeg" alt="Radon Search Logo"><span>RADON <b>SEARCH</b></span></a><nav><a href="../about/">Über Radon</a><a href="../settings/">Einstellungen</a></nav></header><main class="page-main"><div class="eyebrow">RADON SEARCH · SUCHE</div><h1>Suchergebnisse</h1><form class="search-form" action="../search/" method="get"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"></circle><path d="m16 16 5 5"></path></svg><input id="q" name="q" type="search" placeholder="Suchbegriff eingeben" aria-label="Suchbegriff" maxlength="300" required><button type="submit">Suchen <span>→</span></button></form><p class="result-query" id="query-label"></p><section class="content-card" aria-live="polite" id="results"><p class="hint">Suche wird gestartet …</p></section></main><footer><span>© <span id="year"></span> Radon Search</span><span>Version 0.5.0</span><a href="../impressum/">Impressum</a><a href="../datenschutz/">Datenschutz</a><a href="../">Startseite</a></footer>
 <script src="../assets/config.js"></script><script src="../assets/app.js"></script><script>
 const params=new URLSearchParams(location.search);const q=(params.get('q')||'').trim();const field=document.getElementById('q');field.value=q;document.getElementById('query-label').textContent=q?'Suchanfrage: '+q:'';document.getElementById('year').textContent=new Date().getFullYear();
 const resultsBox=document.getElementById('results');
@@ -15,11 +15,19 @@ else if(window.RadonSearch && window.RadonSearch.search){
         const source=document.createElement('small');source.textContent=result.source || 'Radon Search';
         item.append(link,snippet,source);resultsBox.appendChild(item);
       });
-    } else if(!data.message){
-      const note=document.createElement('p');note.className='notice';note.textContent='Keine Treffer gefunden.';resultsBox.appendChild(note);
+    }
+    if(!Array.isArray(data.results) || data.results.length===0){
+      const fallback=document.createElement('div');fallback.className='ddg-fallback';
+      const title=document.createElement('p');title.className='notice';title.textContent='Radon konnte gerade keine Webtreffer abrufen. Du kannst dieselbe Suche direkt bei DuckDuckGo ausführen.';
+      const link=document.createElement('a');link.className='ddg-button';link.href='https://duckduckgo.com/?q='+encodeURIComponent(q);link.target='_blank';link.rel='noopener noreferrer';link.textContent='Mit DuckDuckGo suchen ↗';
+      fallback.append(title,link);resultsBox.appendChild(fallback);
+    } else {
+      const link=document.createElement('a');link.className='ddg-secondary';link.href='https://duckduckgo.com/?q='+encodeURIComponent(q);link.target='_blank';link.rel='noopener noreferrer';link.textContent='Weitere Ergebnisse bei DuckDuckGo ↗';resultsBox.appendChild(link);
     }
   }).catch(error=>{
-    resultsBox.replaceChildren();const n=document.createElement('p');n.className='notice';n.textContent=error.message;resultsBox.appendChild(n);
+    resultsBox.replaceChildren();const n=document.createElement('p');n.className='notice';n.textContent='Radon-Backend momentan nicht erreichbar. Du kannst die Suche trotzdem direkt ausführen.';
+    const link=document.createElement('a');link.className='ddg-button';link.href='https://duckduckgo.com/?q='+encodeURIComponent(q);link.target='_blank';link.rel='noopener noreferrer';link.textContent='Mit DuckDuckGo suchen ↗';
+    resultsBox.append(n,link);
   });
 }
 </script></body></html>
